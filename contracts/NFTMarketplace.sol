@@ -5,70 +5,58 @@ import "@openzeppelin/contracts/token/ERC721/extensions/ERC721URIStorage.sol";
 import "@openzeppelin/contracts/access/Ownable.sol";
 import "@openzeppelin/contracts/utils/Counters.sol";
 import "./interfaces/INFTMarketplace.sol";
-import "./W3ACandidates.sol";
 
 contract NFTMarketplace is ERC721URIStorage, Ownable, INFTMarketplace {
+
     using Counters for Counters.Counter;
     Counters.Counter private _tokenIdCounter;
 
     mapping(uint256 => Listing) public _listings;
-    W3ACandidates public candidates;
 
-    modifier onlyCandidates() {
-        require(candidates.checkCandidate(msg.sender), "Not a W3A Candidate");
-        _;
-    }
-
-    constructor(address _candidates) ERC721("Web3 Academy NFTs", "W3ANFTs") {
-        candidates = W3ACandidates(_candidates);
+    constructor() ERC721("Web3 Academy NFTs", "W3ANFTs") {
     }
 
     function createNFT(string memory _tokenURI) external {
-        uint _newTokenId = _tokenIdCounter.current();
-        _safeMint(msg.sender, _newTokenId);
-        _setTokenURI(_newTokenId, _tokenURI);
+        uint256 _newId = _tokenIdCounter.current();
 
+        _safeMint(msg.sender, _newId);
+        _setTokenURI(_newId, _tokenURI);
         _tokenIdCounter.increment();
-        emit CreatedNFT(_newTokenId, _tokenURI, msg.sender);
+
+        emit CreatedNFT(_newId, _tokenURI, msg.sender);
     }
 
     function listNFT(uint256 _tokenID, uint256 _price) external {
-        require(_price > 0, "Price of listing cannot be 0");
+        require(_price > 0, "Price must be greater than 0");
 
-        transferFrom(msg.sender, address(this), _tokenID);
         _listings[_tokenID] = Listing(msg.sender, _price);
+        transferFrom(msg.sender, address(this), _tokenID);
+        //        safeTransferFrom(msg.sender, address(this), _tokenID);
 
         emit ListedNFT(_tokenID, _price);
     }
 
     function cancelListing(uint256 _tokenID) external {
         Listing memory listing = _listings[_tokenID];
-
-        require(listing.price > 0, "Listing for this NFT doesn't exist");
-        require(listing.seller == msg.sender, "Not listing owner");
-
+        require(listing.seller == msg.sender, "Not the owner of the listing");
         ERC721(address(this)).transferFrom(address(this), msg.sender, _tokenID);
-        clearListing(_tokenID);
+        //        safeTransferFrom(address(this), msg.sender, _tokenID);
+
+        delete listing;
+
         emit ClearedListing(_tokenID);
     }
 
     function buyNFT(uint256 _tokenID) external payable {
         Listing memory listing = _listings[_tokenID];
-
-        require(listing.price != 0, "NFT not listed for sale");
-        require(msg.value == listing.price, "Incorrect amount of ETH");
-
+        require(listing.seller != address(0), "Listing doesn't exist");
+        require(msg.value == listing.price, "Wrong price");
         ERC721(address(this)).transferFrom(address(this), msg.sender, _tokenID);
+        //        safeTransferFrom(address(this), msg.sender, _tokenID);
 
-        // https://solidity-by-example.org/sending-ether/
+        (bool sent,) = listing.seller.call{value : msg.value * 95 / 100}("");
+        require(sent, "Failed to send Ether");
 
-        (bool sent,) = payable(listing.seller).call{value : (listing.price * 95 / 100)}("");
-        require(sent, "ETH Transfer failed");
-
-        emit SoldNFT(_tokenID, msg.value);
-    }
-
-    function clearListing(uint256 _tokenId) internal {
-        delete _listings[_tokenId];
+        emit SoldNFT(_tokenID, listing.price, msg.sender);
     }
 }
