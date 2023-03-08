@@ -55,8 +55,6 @@ describe('NFTMarketplace Tests', async () => {
         let balanceAdminAfter = await admin.getBalance();
 
         expect(balanceAdminAfter.sub(balanceAdminBefore)).to.be.eq(price.mul(95).div(100));
-
     });
-
 
 });
